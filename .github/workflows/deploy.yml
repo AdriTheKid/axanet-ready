@@ -1,0 +1,42 @@
+name: Deploy EC2 (SSH)
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add EC2 host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      - name: Create tarball
+        run: tar czf app.tar.gz *
+      - name: Copy to EC2 via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          source: "app.tar.gz"
+          target: ${{ secrets.EC2_PATH }}
+      - name: Remote deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.EC2_PATH }}
+            mkdir -p axanet && cp app.tar.gz axanet/
+            cd axanet
+            tar xzf app.tar.gz
+            chmod +x scripts/*.sh || true
+            sudo bash scripts/ec2_setup.sh
+            sudo systemctl restart axanet
+            sudo systemctl status axanet --no-pager -l || true

@@ -1,0 +1,6 @@
+Host axanet-ec2
+    HostName ec2-XX-XX-XX-XX.compute-1.amazonaws.com
+    User ec2-user
+    IdentityFile ~/.ssh/axanetaccess.pem
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
