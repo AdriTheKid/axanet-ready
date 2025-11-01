@@ -4,35 +4,35 @@ from app import app
 
 def test_health():
     client = app.test_client()
-    response = client.get('/')
+    response = client.get("/")
     assert response.status_code == 200
-    assert response.get_json()['ok'] is True
+    assert response.get_json()["ok"] is True
 
 
 def test_crud():
     client = app.test_client()
 
-    # Crear cliente
+    # Crear
     response = client.post(
-        '/clients',
-        json={'name': 'TestUser', 'service': 'Internet', 'data': {'plan': 'Pro'}}
+        "/clients",
+        json={"name": "TestUser", "service": "Internet", "data": {"plan": "Pro"}},
     )
     assert response.status_code in (200, 201)
 
-    # Obtener cliente
-    response = client.get('/clients/TestUser')
+    # Obtener
+    response = client.get("/clients/TestUser")
     assert response.status_code == 200
-    assert response.get_json()['name'] == 'TestUser'
+    assert response.get_json()["name"] == "TestUser"
 
-    # Actualizar cliente
+    # Actualizar
     response = client.put(
-        '/clients/TestUser',
-        json={'data': {'plan': 'Premium'}}
+        "/clients/TestUser",
+        json={"data": {"plan": "Premium"}},
     )
     assert response.status_code == 200
-    assert response.get_json()['client']['data']['plan'] == 'Premium'
+    assert response.get_json()["client"]["data"]["plan"] == "Premium"
 
-    # Borrar cliente
-    response = client.delete('/clients/TestUser')
+    # Borrar
+    response = client.delete("/clients/TestUser")
     assert response.status_code == 200
-    assert response.get_json()['ok'] is True
+    assert response.get_json()["ok"] is True
