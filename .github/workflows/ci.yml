@@ -12,4 +12,4 @@ jobs:
           python-version: '3.11'
       - run: pip install -r requirements.txt
       - run: flake8 .
-      - run: pytest -q
+      - run: PYTHONPATH=$PWD pytest -q
