@@ -121,7 +121,7 @@ def create_client():
     nombre = _get_in(data, "nombre", "name")
     servicio = _get_in(data, "servicio", "service")
     correo = _get_in(data, "correo", "email")
-    extra = data.get("extra") or data.get("data") or {}
+    payload = data.get("extra") or data.get("data") or {}
 
     if not nombre or not servicio:
         return (
@@ -137,12 +137,11 @@ def create_client():
         "correo": correo,
         "servicio": servicio,
         "service": servicio,      # espejo para compatibilidad
-        "extra": extra,
+        "extra": payload,         # guardamos en ambos
+        "data": payload,          # para que el test encuentre ["client"]["data"]
     }
     items.append(new)
     _save(items)
-
-    # DEVUELVE AMBAS CLAVES: 'cliente' y 'client'
     return jsonify({"message": "created", "cliente": new, "client": new}), 201
 
 
@@ -172,11 +171,11 @@ def update_client_any(key: str):
         c["correo"] = v
 
     if "extra" in data or "data" in data:
-        c["extra"] = data.get("extra") or data.get("data") or {}
+        payload = data.get("extra") or data.get("data") or {}
+        c["extra"] = payload
+        c["data"] = payload  # reflejo para que el test encuentre ["client"]["data"]
 
     _save(items)
-
-    # DEVUELVE AMBAS CLAVES: 'cliente' y 'client'
     return jsonify({"message": "updated", "cliente": c, "client": c})
 
 
