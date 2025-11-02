@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 
 app = Flask(__name__)
 
-# --- Persistencia en archivo JSON ---
+# --- Persistencia JSON ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -38,72 +38,95 @@ def _next_id(items: List[Dict[str, Any]]) -> int:
     return (max((c.get("id", 0) for c in items), default=0) + 1)
 
 
-# --- Rutas ---
+def _get_in(data: Dict[str, Any], *keys: str, default=None):
+    """Obtén el primer key presente en data (útil para español/inglés)."""
+    for k in keys:
+        if k in data and data[k] not in (None, ""):
+            return data[k]
+    return default
+
+
+# ------------------ Rutas ------------------
+
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"ok": True, "message": "Axanet Client Manager running!"})
 
 
+# Aliases: /clientes y /clients
 @app.route("/clientes", methods=["GET"])
-def listar_clientes():
-    clientes = _load()
-    return jsonify(clientes)
+@app.route("/clients", methods=["GET"])
+def list_clients():
+    return jsonify(_load())
 
 
 @app.route("/clientes/<int:cid>", methods=["GET"])
-def obtener_cliente(cid: int):
-    clientes = _load()
-    for c in clientes:
+@app.route("/clients/<int:cid>", methods=["GET"])
+def get_client(cid: int):
+    items = _load()
+    for c in items:
         if c.get("id") == cid:
             return jsonify(c)
     return jsonify({"error": "Cliente no encontrado"}), 404
 
 
 @app.route("/clientes", methods=["POST"])
-def crear_cliente():
+@app.route("/clients", methods=["POST"])
+def create_client():
     data = request.get_json(silent=True) or {}
-    requerido = ("nombre", "servicio")
-    if any(not data.get(k) for k in requerido):
-        return jsonify({"error": "Campos requeridos: nombre, servicio"}), 400
+    nombre = _get_in(data, "nombre", "name")
+    servicio = _get_in(data, "servicio", "service")
+    correo = _get_in(data, "correo", "email")
+    extra = data.get("extra") or data.get("data") or {}
 
-    clientes = _load()
+    if not nombre or not servicio:
+        return jsonify({"error": "Campos requeridos: nombre/name y servicio/service"}), 400
+
+    items = _load()
     new = {
-        "id": _next_id(clientes),
-        "nombre": data.get("nombre"),
-        "correo": data.get("correo"),
-        "servicio": data.get("servicio"),
-        "extra": data.get("extra", {}),
+        "id": _next_id(items),
+        "nombre": nombre,
+        "correo": correo,
+        "servicio": servicio,
+        "extra": extra,
     }
-    clientes.append(new)
-    _save(clientes)
+    items.append(new)
+    _save(items)
     return jsonify({"mensaje": "Cliente agregado", "cliente": new}), 201
 
 
 @app.route("/clientes/<int:cid>", methods=["PUT", "PATCH"])
-def actualizar_cliente(cid: int):
+@app.route("/clients/<int:cid>", methods=["PUT", "PATCH"])
+def update_client(cid: int):
     data = request.get_json(silent=True) or {}
-    clientes = _load()
-    for c in clientes:
+    items = _load()
+    for c in items:
         if c.get("id") == cid:
-            # Actualiza solo campos presentes
-            for k in ("nombre", "correo", "servicio", "extra"):
-                if k in data:
-                    c[k] = data[k]
-            _save(clientes)
+            # aceptar español/inglés
+            if _get_in(data, "nombre", "name") is not None:
+                c["nombre"] = _get_in(data, "nombre", "name")
+            if _get_in(data, "servicio", "service") is not None:
+                c["servicio"] = _get_in(data, "servicio", "service")
+            if _get_in(data, "correo", "email") is not None:
+                c["correo"] = _get_in(data, "correo", "email")
+            if "extra" in data or "data" in data:
+                c["extra"] = data.get("extra") or data.get("data") or {}
+            _save(items)
             return jsonify({"mensaje": "Cliente actualizado", "cliente": c})
     return jsonify({"error": "Cliente no encontrado"}), 404
 
 
 @app.route("/clientes/<int:cid>", methods=["DELETE"])
-def borrar_cliente(cid: int):
-    clientes = _load()
-    nuevo = [c for c in clientes if c.get("id") != cid]
-    if len(nuevo) == len(clientes):
+@app.route("/clients/<int:cid>", methods=["DELETE"])
+def delete_client(cid: int):
+    items = _load()
+    new_items = [c for c in items if c.get("id") != cid]
+    if len(new_items) == len(items):
         return jsonify({"error": "Cliente no encontrado"}), 404
-    _save(nuevo)
+    _save(new_items)
     return jsonify({"mensaje": "Cliente eliminado", "id": cid})
 
 
-# Necesario si lo corres directamente (debug/local). En EC2 usamos Gunicorn.
+# Para ejecución directa (local). En EC2 usamos Gunicorn.
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
