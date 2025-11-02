@@ -133,15 +133,17 @@ def create_client():
     new = {
         "id": _next_id(items),
         "nombre": nombre,
-        "name": nombre,
+        "name": nombre,          # espejo para compatibilidad
         "correo": correo,
         "servicio": servicio,
-        "service": servicio,
+        "service": servicio,      # espejo para compatibilidad
         "extra": extra,
     }
     items.append(new)
     _save(items)
-    return jsonify({"mensaje": "Cliente agregado", "cliente": new}), 201
+
+    # DEVUELVE AMBAS CLAVES: 'cliente' y 'client'
+    return jsonify({"message": "created", "cliente": new, "client": new}), 201
 
 
 @app.put("/clientes/<path:key>")
@@ -173,7 +175,9 @@ def update_client_any(key: str):
         c["extra"] = data.get("extra") or data.get("data") or {}
 
     _save(items)
-    return jsonify({"mensaje": "Cliente actualizado", "cliente": c})
+
+    # DEVUELVE AMBAS CLAVES: 'cliente' y 'client'
+    return jsonify({"message": "updated", "cliente": c, "client": c})
 
 
 @app.delete("/clientes/<path:key>")
@@ -187,7 +191,7 @@ def delete_client_any(key: str):
     _save(new_items)
     return jsonify(
         {
-            "mensaje": "Cliente eliminado",
+            "message": "deleted",
             "id": c.get("id"),
             "name": c.get("nombre") or c.get("name"),
         }
