@@ -1,124 +1,109 @@
+# app.py
+from __future__ import annotations
 from flask import Flask, jsonify, request
-import os
 import json
+import os
 import threading
-from datetime import datetime
+from typing import List, Dict, Any
 
 app = Flask(__name__)
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "clients.json")
-_LOCK = threading.Lock()
+
+# --- Persistencia en archivo JSON ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "clients.json")
+
+_lock = threading.Lock()
 
 
-def _load():
-    if not os.path.exists(DATA_PATH):
-        os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
-        with open(DATA_PATH, "w", encoding="utf-8") as f:
-            json.dump({"_meta": {"version": 1}}, f)
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load() -> List[Dict[str, Any]]:
+    if not os.path.exists(DB_PATH):
+        return []
+    with _lock:
+        with open(DB_PATH, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []
 
 
-def _save(data):
-    tmp = DATA_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-    os.replace(tmp, DATA_PATH)
+def _save(items: List[Dict[str, Any]]) -> None:
+    with _lock:
+        with open(DB_PATH, "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False, indent=2)
 
 
-@app.get("/")
-def health():
-    return jsonify({"ok": True, "ts": datetime.utcnow().isoformat()})
+def _next_id(items: List[Dict[str, Any]]) -> int:
+    return (max((c.get("id", 0) for c in items), default=0) + 1)
 
 
-@app.get("/clients")
-def list_clients():
-    with _LOCK:
-        data = _load()
-    clients = [k for k in data.keys() if k != "_meta"]
-    return jsonify({"count": len(clients), "clients": clients})
+# --- Rutas ---
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"ok": True, "message": "Axanet Client Manager running!"})
 
 
-@app.post("/clients")
-def create_client():
-    body = request.get_json(force=True, silent=True) or {}
-    name = body.get("name")
-    service = body.get("service", "unspecified")
-    extra = body.get("data", {})
-
-    if not name:
-        return jsonify({"error": "Missing 'name'"}), 400
-
-    with _LOCK:
-        data = _load()
-        if name in data:
-            return jsonify({"error": "Client already exists"}), 409
-
-        data[name] = {
-            "name": name,
-            "service": service,
-            "history": [
-                {
-                    "action": "create",
-                    "service": service,
-                    "ts": datetime.utcnow().isoformat(),
-                }
-            ],
-            "data": extra,
-        }
-        _save(data)
-
-    return jsonify({"ok": True, "client": data[name]}), 201
+@app.route("/clientes", methods=["GET"])
+def listar_clientes():
+    clientes = _load()
+    return jsonify(clientes)
 
 
-@app.get("/clients/<name>")
-def get_client(name):
-    with _LOCK:
-        data = _load()
-        if name not in data:
-            return jsonify({"error": "Not found"}), 404
-        return jsonify(data[name])
+@app.route("/clientes/<int:cid>", methods=["GET"])
+def obtener_cliente(cid: int):
+    clientes = _load()
+    for c in clientes:
+        if c.get("id") == cid:
+            return jsonify(c)
+    return jsonify({"error": "Cliente no encontrado"}), 404
 
 
-@app.put("/clients/<name>")
-def update_client(name):
-    body = request.get_json(force=True, silent=True) or {}
-    patch = body.get("data", {})
-    service = body.get("service")
+@app.route("/clientes", methods=["POST"])
+def crear_cliente():
+    data = request.get_json(silent=True) or {}
+    requerido = ("nombre", "servicio")
+    if any(not data.get(k) for k in requerido):
+        return jsonify({"error": "Campos requeridos: nombre, servicio"}), 400
 
-    with _LOCK:
-        data = _load()
-        if name not in data:
-            return jsonify({"error": "Not found"}), 404
-
-        if patch:
-            data[name]["data"].update(patch)
-
-        if service:
-            data[name]["service"] = service
-
-        data[name]["history"].append(
-            {
-                "action": "update",
-                "service": service or data[name]["service"],
-                "ts": datetime.utcnow().isoformat(),
-            }
-        )
-        _save(data)
-
-    return jsonify({"ok": True, "client": data[name]})
+    clientes = _load()
+    new = {
+        "id": _next_id(clientes),
+        "nombre": data.get("nombre"),
+        "correo": data.get("correo"),
+        "servicio": data.get("servicio"),
+        "extra": data.get("extra", {}),
+    }
+    clientes.append(new)
+    _save(clientes)
+    return jsonify({"mensaje": "Cliente agregado", "cliente": new}), 201
 
 
-@app.delete("/clients/<name>")
-def delete_client(name):
-    with _LOCK:
-        data = _load()
-        if name not in data:
-            return jsonify({"error": "Not found"}), 404
-        deleted = data.pop(name)
-        _save(data)
+@app.route("/clientes/<int:cid>", methods=["PUT", "PATCH"])
+def actualizar_cliente(cid: int):
+    data = request.get_json(silent=True) or {}
+    clientes = _load()
+    for c in clientes:
+        if c.get("id") == cid:
+            # Actualiza solo campos presentes
+            for k in ("nombre", "correo", "servicio", "extra"):
+                if k in data:
+                    c[k] = data[k]
+            _save(clientes)
+            return jsonify({"mensaje": "Cliente actualizado", "cliente": c})
+    return jsonify({"error": "Cliente no encontrado"}), 404
 
-    return jsonify({"ok": True, "deleted": deleted})
+
+@app.route("/clientes/<int:cid>", methods=["DELETE"])
+def borrar_cliente(cid: int):
+    clientes = _load()
+    nuevo = [c for c in clientes if c.get("id") != cid]
+    if len(nuevo) == len(clientes):
+        return jsonify({"error": "Cliente no encontrado"}), 404
+    _save(nuevo)
+    return jsonify({"mensaje": "Cliente eliminado", "id": cid})
 
 
+# Necesario si lo corres directamente (debug/local). En EC2 usamos Gunicorn.
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
