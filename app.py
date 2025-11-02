@@ -17,15 +17,29 @@ DB_PATH = os.path.join(DATA_DIR, "clients.json")
 _lock = threading.Lock()
 
 
+def _normalize_to_list(data: Any) -> List[Dict[str, Any]]:
+    """Devuelve siempre una lista de diccionarios."""
+    if isinstance(data, list):
+        # Solo deja dicts bien formados
+        return [x for x in data if isinstance(x, dict)]
+    # Si es un dict suelto o cualquier otra cosa, lo tratamos como base vacía
+    return []
+
+
+def _safe_read_json(path: str) -> Any:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _load() -> List[Dict[str, Any]]:
-    if not os.path.exists(DB_PATH):
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
         return []
     with _lock:
-        with open(DB_PATH, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
+        try:
+            data = _safe_read_json(DB_PATH)
+        except (json.JSONDecodeError, OSError):
+            return []
+    return _normalize_to_list(data)
 
 
 def _save(items: List[Dict[str, Any]]) -> None:
@@ -35,7 +49,9 @@ def _save(items: List[Dict[str, Any]]) -> None:
 
 
 def _next_id(items: List[Dict[str, Any]]) -> int:
-    return (max((c.get("id", 0) for c in items), default=0) + 1)
+    # Considera solo dicts con clave id numérica
+    ids = [int(c["id"]) for c in items if isinstance(c, dict) and isinstance(c.get("id", 0), (int, float))]
+    return (max(ids, default=0) + 1)
 
 
 def _get_in(data: Dict[str, Any], *keys: str, default=None):
@@ -102,13 +118,15 @@ def update_client(cid: int):
     items = _load()
     for c in items:
         if c.get("id") == cid:
-            # aceptar español/inglés
-            if _get_in(data, "nombre", "name") is not None:
-                c["nombre"] = _get_in(data, "nombre", "name")
-            if _get_in(data, "servicio", "service") is not None:
-                c["servicio"] = _get_in(data, "servicio", "service")
-            if _get_in(data, "correo", "email") is not None:
-                c["correo"] = _get_in(data, "correo", "email")
+            v = _get_in(data, "nombre", "name")
+            if v is not None:
+                c["nombre"] = v
+            v = _get_in(data, "servicio", "service")
+            if v is not None:
+                c["servicio"] = v
+            v = _get_in(data, "correo", "email")
+            if v is not None:
+                c["correo"] = v
             if "extra" in data or "data" in data:
                 c["extra"] = data.get("extra") or data.get("data") or {}
             _save(items)
@@ -127,6 +145,5 @@ def delete_client(cid: int):
     return jsonify({"mensaje": "Cliente eliminado", "id": cid})
 
 
-# Para ejecución directa (local). En EC2 usamos Gunicorn.
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
